@@ -75,8 +75,8 @@ export default function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
               QRoll Call Platform
             </div>
           </div>
-          <h2 className="mt-4 text-center text-2xl font-semibold tracking-tight text-gray-900 font-display" id="login-title">
-            SmartAttend QR
+          <h2 className="mt-4 text-center text-2xl font-bold italic tracking-tight text-[#db0000] font-display" id="login-title">
+            QRoll Call
           </h2>
           <p className="mt-2 text-center text-sm text-gray-500">
             Secure, geofenced QR attendance management

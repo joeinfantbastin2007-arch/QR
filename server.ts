@@ -952,7 +952,10 @@ app.post("/api/faculty/sessions", requireAuth(['faculty']), (req: any, res) => {
 
   DB.addLog(req.user.email, 'faculty', 'Generate Attendance Session', `Created active QR session (${session_code}) for ${subject.subject_name}`);
 
-  res.json(newSession);
+  res.json({
+    ...newSession,
+    server_time: new Date().toISOString()
+  });
 });
 
 // Update attendance session controls
@@ -986,7 +989,10 @@ app.put("/api/faculty/sessions/:id", requireAuth(['faculty']), (req: any, res) =
   }
 
   DB.save();
-  res.json(sess);
+  res.json({
+    ...sess,
+    server_time: new Date().toISOString()
+  });
 });
 
 // Get session details and active records list
@@ -1013,7 +1019,8 @@ app.get("/api/faculty/sessions/:id/records", requireAuth(['admin', 'faculty']), 
       ...sess,
       subject_name: subject ? subject.subject_name : "Unknown"
     },
-    records: resolvedRecords
+    records: resolvedRecords,
+    server_time: new Date().toISOString()
   });
 });
 
@@ -1083,7 +1090,8 @@ app.get("/api/faculty/dashboard", requireAuth(['faculty']), (req: any, res) => {
       };
     }),
     recent_activity: recentRecords,
-    subjects_summary: subjectSummaries
+    subjects_summary: subjectSummaries,
+    server_time: new Date().toISOString()
   });
 });
 

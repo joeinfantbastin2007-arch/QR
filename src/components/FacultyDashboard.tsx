@@ -45,6 +45,7 @@ export default function FacultyDashboard({ token, user, onLogout }: FacultyDashb
 
   const countdownIntervalRef = useRef<any>(null);
   const pollingIntervalRef = useRef<any>(null);
+  const skewRef = useRef<number>(0);
 
   useEffect(() => {
     fetchDashboardDetails();
@@ -70,6 +71,21 @@ export default function FacultyDashboard({ token, user, onLogout }: FacultyDashb
         setTodaySessions(data.today_sessions || []);
         setRecentActivity(data.recent_activity || []);
         setSubjectsSummary(data.subjects_summary || []);
+
+        if (data.server_time) {
+          skewRef.current = new Date(data.server_time).getTime() - Date.now();
+        }
+
+        // Auto-restore active session if it is running in database
+        const active = (data.today_sessions || []).find((s: any) => s.status === "active");
+        if (active) {
+          const currentSkew = data.server_time ? new Date(data.server_time).getTime() - Date.now() : skewRef.current;
+          const adjustedNow = Date.now() + currentSkew;
+          const remainingSecs = Math.round((new Date(active.expiry_time).getTime() - adjustedNow) / 1000);
+          if (remainingSecs > 0) {
+            startActiveSessionManager(active, currentSkew);
+          }
+        }
       }
 
       // Also list handled subjects
@@ -144,9 +160,11 @@ export default function FacultyDashboard({ token, user, onLogout }: FacultyDashb
   };
 
   // Setup counting ticks and polling attendee list
-  const startActiveSessionManager = async (session: any) => {
+  const startActiveSessionManager = async (session: any, providedSkew?: number) => {
     setActiveSession(session);
     setActiveSessionRecords([]);
+
+    const skew = providedSkew !== undefined ? providedSkew : skewRef.current;
 
     // Generate QR URL
     try {
@@ -165,9 +183,9 @@ export default function FacultyDashboard({ token, user, onLogout }: FacultyDashb
 
     // Launch Clocks
     clearInterval(countdownIntervalRef.current);
-    calculateTimeRemaining(session.expiry_time);
+    calculateTimeRemaining(session.expiry_time, skew);
     countdownIntervalRef.current = setInterval(() => {
-      calculateTimeRemaining(session.expiry_time);
+      calculateTimeRemaining(session.expiry_time, skew);
     }, 1000);
 
     // Launch attendance poller every 3 seconds to fetch present students list
@@ -178,18 +196,22 @@ export default function FacultyDashboard({ token, user, onLogout }: FacultyDashb
     }, 3000);
   };
 
-  const calculateTimeRemaining = (expiryStr: string) => {
-    const totalSecs = Math.round((new Date(expiryStr).getTime() - new Date().getTime()) / 1000);
+  const calculateTimeRemaining = (expiryStr: string, skew = skewRef.current) => {
+    const adjustedNow = Date.now() + skew;
+    const totalSecs = Math.round((new Date(expiryStr).getTime() - adjustedNow) / 1000);
     if (totalSecs <= 0) {
       setSecondsLeft(0);
       clearInterval(countdownIntervalRef.current);
       clearInterval(pollingIntervalRef.current);
-      // Auto close/end session
-      if (activeSession && activeSession.status === "active") {
-        setActiveSession((prev: any) => prev ? { ...prev, status: "ended" } : null);
-        fetchDashboardDetails();
-        fetchReportsDetails();
-      }
+      // Auto close/end session cleanly without stale closures
+      setActiveSession((prev: any) => {
+        if (prev && prev.status === "active") {
+          fetchDashboardDetails();
+          fetchReportsDetails();
+          return { ...prev, status: "ended" };
+        }
+        return prev;
+      });
     } else {
       setSecondsLeft(totalSecs);
     }
@@ -203,9 +225,17 @@ export default function FacultyDashboard({ token, user, onLogout }: FacultyDashb
       const data = await res.json();
       if (res.ok) {
         setActiveSessionRecords(data.records || []);
-        // update status or config sync
-        if (data.session && data.session.status !== activeSession?.status) {
-          setActiveSession(data.session);
+        if (data.server_time) {
+          skewRef.current = new Date(data.server_time).getTime() - Date.now();
+        }
+        // update status or config sync closure-safely
+        if (data.session) {
+          setActiveSession((prev: any) => {
+            if (prev && data.session.status !== prev.status) {
+              return data.session;
+            }
+            return prev;
+          });
         }
       }
     } catch (e) {
@@ -228,6 +258,10 @@ export default function FacultyDashboard({ token, user, onLogout }: FacultyDashb
       const data = await res.json();
       if (res.ok) {
         setActiveSession(data);
+        if (data.server_time) {
+          skewRef.current = new Date(data.server_time).getTime() - Date.now();
+        }
+        
         if (action === "end") {
           clearInterval(countdownIntervalRef.current);
           clearInterval(pollingIntervalRef.current);
@@ -236,11 +270,12 @@ export default function FacultyDashboard({ token, user, onLogout }: FacultyDashb
           fetchDashboardDetails();
           fetchReportsDetails();
         } else if (action === "extend") {
+          const extensionSkew = data.server_time ? (new Date(data.server_time).getTime() - Date.now()) : skewRef.current;
           // Restart countdowns
           clearInterval(countdownIntervalRef.current);
-          calculateTimeRemaining(data.expiry_time);
+          calculateTimeRemaining(data.expiry_time, extensionSkew);
           countdownIntervalRef.current = setInterval(() => {
-            calculateTimeRemaining(data.expiry_time);
+            calculateTimeRemaining(data.expiry_time, extensionSkew);
           }, 1000);
           
           clearInterval(pollingIntervalRef.current);
