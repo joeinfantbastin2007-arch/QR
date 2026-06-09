@@ -1,0 +1,6 @@
+{
+  "name": "SmartAttend QR",
+  "description": "A secure, geofenced QR code-based attendance management system for students, faculty, and administrators.",
+  "requestFramePermissions": ["camera", "geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
